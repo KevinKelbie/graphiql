@@ -78,28 +78,33 @@ export class GraphiQL extends React.Component {
     this._storage = new StorageAPI(props.storage);
 
     // Determine the initial query to display.
-    const query = props.query !== undefined
-      ? props.query
-      : this._storage.get('query') !== null
+    const query =
+      props.query !== undefined
+        ? props.query
+        : this._storage.get('query') !== null
         ? this._storage.get('query')
-        : props.defaultQuery !== undefined ? props.defaultQuery : defaultQuery;
+        : props.defaultQuery !== undefined
+        ? props.defaultQuery
+        : defaultQuery;
 
     // Get the initial query facts.
     const queryFacts = getQueryFacts(props.schema, query);
 
     // Determine the initial variables to display.
-    const variables = props.variables !== undefined
-      ? props.variables
-      : this._storage.get('variables');
+    const variables =
+      props.variables !== undefined
+        ? props.variables
+        : this._storage.get('variables');
 
     // Determine the initial operationName to use.
-    const operationName = props.operationName !== undefined
-      ? props.operationName
-      : getSelectedOperationName(
-          null,
-          this._storage.get('operationName'),
-          queryFacts && queryFacts.operations,
-        );
+    const operationName =
+      props.operationName !== undefined
+        ? props.operationName
+        : getSelectedOperationName(
+            null,
+            this._storage.get('operationName'),
+            queryFacts && queryFacts.operations,
+          );
 
     // Initialize state
     this.state = {
@@ -116,7 +121,7 @@ export class GraphiQL extends React.Component {
       historyPaneOpen: this._storage.get('historyPaneOpen') === 'true' || false,
       docExplorerWidth:
         Number(this._storage.get('docExplorerWidth')) ||
-          DEFAULT_DOC_EXPLORER_WIDTH,
+        DEFAULT_DOC_EXPLORER_WIDTH,
       isWaitingForResponse: false,
       subscription: null,
       ...queryFacts,
@@ -239,12 +244,14 @@ export class GraphiQL extends React.Component {
   render() {
     const children = React.Children.toArray(this.props.children);
 
-    const logo =
-      find(children, child => child.type === GraphiQL.Logo) ||
-      <GraphiQL.Logo />;
+    const logo = find(children, child => child.type === GraphiQL.Logo) || (
+      <GraphiQL.Logo />
+    );
 
-    const toolbar =
-      find(children, child => child.type === GraphiQL.Toolbar) ||
+    const toolbar = find(
+      children,
+      child => child.type === GraphiQL.Toolbar,
+    ) || (
       <GraphiQL.Toolbar>
         <ToolbarButton
           onClick={this.handlePrettifyQuery}
@@ -261,8 +268,8 @@ export class GraphiQL extends React.Component {
           title="Show History"
           label="History"
         />
-
-      </GraphiQL.Toolbar>;
+      </GraphiQL.Toolbar>
+    );
 
     const footer = find(children, child => child.type === GraphiQL.Footer);
 
@@ -317,12 +324,13 @@ export class GraphiQL extends React.Component {
               />
               {toolbar}
             </div>
-            {!this.state.docExplorerOpen &&
+            {!this.state.docExplorerOpen && (
               <button
                 className="docExplorerShow"
                 onClick={this.handleToggleDocs}>
                 {'Docs'}
-              </button>}
+              </button>
+            )}
           </div>
           <div
             ref={n => {
@@ -369,10 +377,11 @@ export class GraphiQL extends React.Component {
               </div>
             </div>
             <div className="resultWrap">
-              {this.state.isWaitingForResponse &&
+              {this.state.isWaitingForResponse && (
                 <div className="spinner-container">
                   <div className="spinner" />
-                </div>}
+                </div>
+              )}
               <ResultViewer
                 ref={c => {
                   this.resultComponent = c;
@@ -524,9 +533,10 @@ export class GraphiQL extends React.Component {
           const queryFacts = getQueryFacts(schema, this.state.query);
           this.setState({ schema, ...queryFacts });
         } else {
-          const responseString = typeof result === 'string'
-            ? result
-            : JSON.stringify(result, null, 2);
+          const responseString =
+            typeof result === 'string'
+              ? result
+              : JSON.stringify(result, null, 2);
           this.setState({
             // Set schema to `null` to explicitly indicate that no schema exists.
             schema: null,
@@ -547,9 +557,8 @@ export class GraphiQL extends React.Component {
     let jsonVariables = null;
 
     try {
-      jsonVariables = variables && variables.trim() !== ''
-        ? JSON.parse(variables)
-        : null;
+      jsonVariables =
+        variables && variables.trim() !== '' ? JSON.parse(variables) : null;
     } catch (error) {
       throw new Error(`Variables are invalid JSON: ${error.message}.`);
     }
@@ -607,6 +616,118 @@ export class GraphiQL extends React.Component {
   };
 
   handleRunQuery = selectedOperationName => {
+    function hasArguments(query) {
+      return query.match(/[?][/w+,='"]+[;]/);
+    }
+
+    let expression = this.state.query;
+
+    const context = [];
+    let index = 0;
+    // The expression array has groups of queries but the layer is not known and must be kept track of. We can use the first character in each match to know whether its deeper or higher in the structure.
+
+    if (expression[expression.length - 1] !== '+') {
+      expression += '+';
+    }
+    let queries = expression.match(/[\w?=;*,'"]+[>+]/g);
+    for (const [q, query] of queries.entries()) {
+      let routes = query.split(',');
+      for (let [r, route] of routes.entries()) {
+        let schema_context = this.state.schema;
+        if (route.split(/[>+]/)[0] === '*') {
+          // Get all sub-fields of current context
+          for (let i = 0; i < index; i++) {
+            if (schema_context['_fields']) {
+              console.log(123, context[i].replace(/[?][\w+,='"]+[;]/, ''));
+              schema_context =
+                schema_context['_fields'][
+                  context[i].replace(/[?][\w+,='"]+[;]/, '').split(/[>+]/)[0]
+                ];
+            } else {
+              schema_context = schema_context[context[i].split(/[>+]/)[0]];
+            }
+
+            if (schema_context['type']) {
+              schema_context = schema_context['type'];
+            }
+          }
+          route = [];
+          for (let field of Object.keys(schema_context['_fields'])) {
+            if (schema_context['_fields'][field]['type']['_fields']) {
+            } else if (schema_context['_fields'][field]['type']['_types']) {
+            } else {
+              route.push(field);
+            }
+          }
+          // route = Object.keys(schema_context["_fields"]);
+          const indent = routes.pop().includes('+') ? '+' : '>';
+          routes = [...routes, ...route];
+          routes[routes.length - 1] += indent;
+        } else {
+          try {
+            console.log(route);
+            let myArgs = route.match(/[?][\w+=,'"]+[;]/g)[0];
+            route = route.replace(myArgs, '');
+            myArgs = myArgs.replace('?', '').replace(';', '');
+            console.log(233, myArgs);
+
+            let args =
+              schema_context[context[index - 1].split(/[>+]/)[0]]['_fields'][
+                route.split(/[+>]/)[0]
+              ].args;
+            args = args
+              .map(arg => {
+                return arg.name;
+              })
+              .join(': , ');
+            args = `?${args + ': , ' + myArgs};`;
+            const indent = route[route.length - 1] === '+' ? '+' : '>';
+            route = route.slice(0, -1);
+            routes.pop();
+            routes.push(route + args);
+            console.log(routes);
+          } catch (e) {
+            console.log(123);
+          }
+        }
+        if (route[route.length - 1] === '>') {
+          index++;
+          if (route === 'query>') {
+            route = '_queryType>';
+          }
+          context.push(route);
+        } else if (route[route.length - 1] === '+') {
+          index--;
+          context.pop();
+        }
+        // Might add recursion here since everything has been expanded.
+        // if (includes("*")) {routes[r]=rec()}
+        // routes[r] = route;
+      }
+      queries[q] = routes;
+    }
+    queries = queries.join('');
+    console.log(queries);
+
+    expression = queries.replace(/[>+?;=|']/g, function(match, index) {
+      return {
+        "'": '"',
+        '>': '{',
+        '+': '},',
+        '?': '(',
+        ';': ')',
+        '=': ':',
+        '|': '... on ',
+      }[match];
+    });
+
+    const expressionCountOpens = (expression.match(/{/g) || []).length;
+    const expressionCountCloses = (expression.match(/}/g) || []).length;
+
+    expression += '}'.repeat(expressionCountOpens - expressionCountCloses);
+
+    this.setState({ query: expression });
+
     this._editorQueryID++;
     const queryID = this._editorQueryID;
 
@@ -972,18 +1093,20 @@ export class GraphiQL extends React.Component {
 GraphiQL.Logo = function GraphiQLLogo(props) {
   return (
     <div className="title">
-      {props.children || <span>{'Graph'}<em>{'i'}</em>{'QL'}</span>}
+      {props.children || (
+        <span>
+          {'Graph'}
+          <em>{'i'}</em>
+          {'QL'}
+        </span>
+      )}
     </div>
   );
 };
 
 // Configure the UI by providing this Component as a child of GraphiQL.
 GraphiQL.Toolbar = function GraphiQLToolbar(props) {
-  return (
-    <div className="toolbar">
-      {props.children}
-    </div>
-  );
+  return <div className="toolbar">{props.children}</div>;
 };
 
 // Export main windows/panes to be used separately if desired.
@@ -1008,11 +1131,7 @@ GraphiQL.SelectOption = ToolbarSelectOption;
 
 // Configure the UI by providing this Component as a child of GraphiQL.
 GraphiQL.Footer = function GraphiQLFooter(props) {
-  return (
-    <div className="footer">
-      {props.children}
-    </div>
-  );
+  return <div className="footer">{props.children}</div>;
 };
 
 const defaultQuery = `# Welcome to GraphiQL
