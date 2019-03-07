@@ -665,11 +665,12 @@ export class GraphiQL extends React.Component {
           routes[routes.length - 1] += indent;
         } else {
           try {
-            console.log(route);
-            let myArgs = route.match(/[?][\w+=,'"]+[;]/g)[0];
+            let myArgs = '';
+            try {
+              myArgs = route.match(/[?][\w+=,'"]+[;]/g)[0];
+            } catch (e) {}
             route = route.replace(myArgs, '');
             myArgs = myArgs.replace('?', '').replace(';', '');
-            console.log(233, myArgs);
 
             let args =
               schema_context[context[index - 1].split(/[>+]/)[0]]['_fields'][
@@ -681,6 +682,7 @@ export class GraphiQL extends React.Component {
               })
               .join(': , ');
             args = `?${args + ': , ' + myArgs};`;
+            console.log(args);
             const indent = route[route.length - 1] === '+' ? '+' : '>';
             route = route.slice(0, -1);
             routes.pop();
