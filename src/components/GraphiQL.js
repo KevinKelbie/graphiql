@@ -616,119 +616,114 @@ export class GraphiQL extends React.Component {
   };
 
   handleRunQuery = selectedOperationName => {
-    function hasArguments(query) {
-      return query.match(/[?][/w+,='"]+[;]/);
-    }
-
-    let expression = this.state.query;
-
-    const context = [];
-    let index = 0;
-    // The expression array has groups of queries but the layer is not known and must be kept track of. We can use the first character in each match to know whether its deeper or higher in the structure.
-
-    if (expression[expression.length - 1] !== '+') {
-      expression += '+';
-    }
-    let queries = expression.match(/[\w?=;*,'"]+[>+]/g);
-    for (const [q, query] of queries.entries()) {
-      let routes = query.split(',');
-      for (let [r, route] of routes.entries()) {
-        let schema_context = this.state.schema;
-        if (route.split(/[>+]/)[0] === '*') {
-          // Get all sub-fields of current context
-          for (let i = 0; i < index; i++) {
-            if (schema_context['_fields']) {
-              console.log(123, context[i].replace(/[?][\w+,='"]+[;]/, ''));
-              schema_context =
-                schema_context['_fields'][
-                  context[i].replace(/[?][\w+,='"]+[;]/, '').split(/[>+]/)[0]
-                ];
-            } else {
-              schema_context = schema_context[context[i].split(/[>+]/)[0]];
-            }
-
-            if (schema_context['type']) {
-              schema_context = schema_context['type'];
-            }
-          }
-          route = [];
-          for (let field of Object.keys(schema_context['_fields'])) {
-            if (schema_context['_fields'][field]['type']['_fields']) {
-            } else if (schema_context['_fields'][field]['type']['_types']) {
-            } else {
-              route.push(field);
-            }
-          }
-          // route = Object.keys(schema_context["_fields"]);
-          const indent = routes.pop().includes('+') ? '+' : '>';
-          routes = [...routes, ...route];
-          routes[routes.length - 1] += indent;
-        } else {
-          try {
-            let myArgs = '';
-            try {
-              myArgs = route.match(/[?][\w+=,'"]+[;]/g)[0];
-            } catch (e) {}
-            route = route.replace(myArgs, '');
-            myArgs = myArgs.replace('?', '').replace(';', '');
-
-            let args =
-              schema_context[context[index - 1].split(/[>+]/)[0]]['_fields'][
-                route.split(/[+>]/)[0]
-              ].args;
-            args = args
-              .map(arg => {
-                return arg.name;
-              })
-              .join(': , ');
-            args = `?${args + ': , ' + myArgs};`;
-            console.log(args);
-            const indent = route[route.length - 1] === '+' ? '+' : '>';
-            route = route.slice(0, -1);
-            routes.pop();
-            routes.push(route + args);
-            console.log(routes);
-          } catch (e) {
-            console.log(123);
-          }
-        }
-        if (route[route.length - 1] === '>') {
-          index++;
-          if (route === 'query>') {
-            route = '_queryType>';
-          }
-          context.push(route);
-        } else if (route[route.length - 1] === '+') {
-          index--;
-          context.pop();
-        }
-        // Might add recursion here since everything has been expanded.
-        // if (includes("*")) {routes[r]=rec()}
-        // routes[r] = route;
+    function isOpening(expression) {
+      if (expression.includes('>')) {
+        return true;
       }
-      queries[q] = routes;
+      return false;
     }
-    queries = queries.join('');
-    console.log(queries);
 
-    expression = queries.replace(/[>+?;=|']/g, function(match, index) {
-      return {
-        "'": '"',
-        '>': '{',
-        '+': '},',
-        '?': '(',
-        ';': ')',
-        '=': ':',
-        '|': '... on ',
-      }[match];
-    });
+    function isClosing(expression) {
+      if (expression.includes('+')) {
+        return true;
+      }
+      return false;
+    }
 
-    const expressionCountOpens = (expression.match(/{/g) || []).length;
-    const expressionCountCloses = (expression.match(/}/g) || []).length;
+    function parseEndingQuery(expression) {
+      return expression.match(/(?:[,])?([\w*]+)([?][\w*]+[;])?(?:[>+])/)[1];
+    }
 
-    expression += '}'.repeat(expressionCountOpens - expressionCountCloses);
+    function parseQueries(expression) {
+      return expression.match(/([\w*]+)(?:[>+,?])/g).map(expression => {
+        return expression.split(/[>+?,]/)[0];
+      });
+    }
 
-    this.setState({ query: expression });
+    function parseArgs(expression) {
+      const args = expression.match(/([?])([\w*]+)([;])/);
+      if (args !== null) {
+        return args[2];
+      } else {
+        return '';
+      }
+    }
+
+    function parseNesting(expression) {
+      return expression.match(/[+>]/);
+    }
+
+    function getSchemaContext(schema, stack) {
+      let context = schema;
+      for (const element of stack) {
+        if (element === 'query') {
+          context = context['_queryType']['_fields'];
+        } else if (context[element]) {
+          context = context[element];
+        } else if (context['type']) {
+          if (context['type']['_fields']) {
+            context = context['type']['_fields'][element];
+          }
+        }
+      }
+      return context;
+    }
+
+    let query = this.state.query;
+    let expressions = query.match(/[\w*,]+([?][\w*]+[;])?[>+]/g);
+    const schema = this.state.schema;
+    let expandedExpression = '';
+    let stack = [];
+    for (let expression of expressions) {
+      let nestingOperator = '';
+      if (isOpening(expression)) {
+        stack.push(parseEndingQuery(expression));
+        nestingOperator = '>';
+      } else if (isClosing(expression)) {
+        stack.pop();
+        nestingOperator = '+';
+      }
+      console.log(stack);
+
+      const schemaContext = getSchemaContext(schema, stack);
+
+      // Expand queries
+      let expandedQueries = [];
+      if (parseQueries(expression).includes('*')) {
+        // Add fields without sub-fields
+        expandedQueries = Object.keys(schemaContext).filter(key => {
+          if (schemaContext[key]['type']['_fields']) {
+            // has sub-fields
+            return false;
+          }
+          return true;
+        });
+      }
+      expandedQueries = [
+        ...expandedQueries,
+        // add all specified queries
+        ...parseQueries(expression).filter(query => {
+          if (query === '*') {
+            // filter out catch alls because they have all ready been accounted for above
+            return false;
+          }
+          return true;
+        }),
+      ];
+
+      expandedExpression += expandedQueries.join(',');
+
+      // Expand Arguments
+      if (parseArgs(expression) === '*') {
+        expandedExpression += '?' + Object.keys(schemaContext).join(',') + ';';
+      }
+
+      expandedExpression += nestingOperator;
+    }
+
+    console.log(expandedExpression);
+
+    this.setState({ query: '' });
 
     this._editorQueryID++;
     const queryID = this._editorQueryID;

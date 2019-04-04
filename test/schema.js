@@ -18,6 +18,7 @@ const {
   GraphQLString,
   GraphQLID,
   GraphQLList,
+  GraphQLNonNull,
 } = require('graphql');
 
 // Test Schema
@@ -140,7 +141,7 @@ const TestType = new GraphQLObjectType({
       type: TestType,
       description:
         '`longDescriptionType` field from `Test` type, which ' +
-          'has a long, verbose, description to test inline field docs',
+        'has a long, verbose, description to test inline field docs',
       resolve: () => ({}),
     },
     union: {
@@ -149,7 +150,7 @@ const TestType = new GraphQLObjectType({
       resolve: () => ({}),
     },
     id: {
-      type: GraphQLID,
+      type: new GraphQLNonNull(GraphQLID),
       description: 'id field from Test type.',
       resolve: () => 'abc123',
     },
